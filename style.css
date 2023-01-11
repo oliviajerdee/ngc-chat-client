@@ -1,0 +1,42 @@
+table {
+   border-collapse: collapse;
+   border: 3px outset black; 
+   width: 27%;
+   font-family: Arial;
+}
+
+tr {
+    border-bottom: 3px solid black;
+}
+
+td {
+    text-align: left;
+    padding-left: 10%;
+}
+
+td a {
+    display:block;
+    width:100%;
+    color: inherit;
+    text-decoration: inherit;
+}
+
+.chat {
+    font-family: Arial;
+}
+
+h1 {
+    text-align: center;
+    font-family: Arial;
+}
+
+p {
+    font-family: Arial;
+    padding-left: 10%;
+}
+
+#chatBox {
+    width: 50%;
+    height: 30%;
+    background: black;
+}
