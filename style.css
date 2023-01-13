@@ -2,20 +2,48 @@
    position: absolute;
    border-collapse: collapse;
    border: 3px outset black; 
-   width: 27%;
+   width: 15%;
    font-family: Arial;
-   left: 10%;
+   left: 23%;
    overflow-y: scroll;
    height: 50%;
    display: block;
    top: 20%;
 }
 
+#chatBox {
+    font-family: Arial;
+    width: 35%;
+    height: 42.9%;
+    border: 3px solid black;
+    display: inline-block;
+    position: absolute;
+    right: 23%;
+    top: 23.55%;
+}
+
+#chatLabel {
+    position: absolute;
+    border-collapse: collapse;
+    border: 3px outset black; 
+    width: 35%;
+    font-family: Arial;
+    right: 23%;
+    overflow-y: scroll;
+    height: 3.8%;
+    display: block;
+    top: 20%;
+}
+
+#chatLabel::-webkit-scrollbar {
+    display: none;
+}
+
 #leftBar::-webkit-scrollbar {
    display: none;
 }
 
-tr {
+#leftBar tr {
     border-bottom: 3px solid black;
     width: 100%;
 }
@@ -99,13 +127,4 @@ p {
     position: absolute;
 }
 
-#chatBox {
-    font-family: Arial;
-    width: 50%;
-    height: 49.5%;
-    border: 3px solid black;
-    display: inline-block;
-    position: absolute;
-    right: 10%;
-    top: 20%;
-}
+
