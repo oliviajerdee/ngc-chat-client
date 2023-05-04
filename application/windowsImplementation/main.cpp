@@ -95,9 +95,23 @@ vector<vector<string>> readCsvFile(const string& fileName) {
         stringstream ss(line);
         vector<string> row;
         string cell;
-        while (getline(ss, cell, ',')) {
-            row.push_back(cell);
+        bool inQuotes = false;
+        stringstream cellStream;
+        char c;
+        
+        while (ss.get(c)) {
+            if (c == '\"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                row.push_back(cellStream.str());
+                cellStream.str("");
+                cellStream.clear();
+            } else {
+                cellStream << c;
+            }
         }
+
+        row.push_back(cellStream.str());
         data.push_back(row);
     }
     inFile.close();
@@ -108,19 +122,18 @@ void printMessagesAndUserInput(const string& user_input) {
     auto chatData = readCsvFile(fileName);
     clearConsole();
 
-    // Set the field width for each output column
     const int usernameWidth = 10;
     const int messageWidth = 60;
     const int timestampWidth = 20;
 
     for (const auto& row : chatData) {
-        // Print the username column with fixed field width
+
         std::cout << std::setw(usernameWidth) << std::left << row[0] << " ";
 
-        // Print the message column with fixed field width
+       
         std::cout << std::setw(messageWidth) << std::left << row[1] << " ";
 
-        // Print the timestamp column with fixed field width, aligned to the right
+        
         std::cout << std::setw(timestampWidth) << std::right << row[2] << std::endl;
     }
 
@@ -158,7 +171,9 @@ void appendMessageToCsv(const string& fileName, const string& message, const str
         exit(1);
     }
 
-    outFile << username << "," << message << "," << timestamp << '\n';
+    string quote = "\"" + message + "\"";
+
+    outFile << username << "," << quote << "," << timestamp << '\n';
     outFile.close();
 }
 
