@@ -6,22 +6,39 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <Windows.h>
+#include <iomanip>
+#include <lmcons.h>
 
 using namespace std;
 
 string message;
 
 atomic<bool> updated(false);
-string timestamp = "2023-05-03T12:00:00Z";
-string username = "Vincent Candelario";
 
 mutex messageMutex;
 
-string fileName = "/home/jollibeeworker/coding/projects/ngc-chat-client/application/sharedDrive/chat_data.csv";
+string fileName = "C:\\application\\sharedDrive\\chat_data.csv";
 
 void clearConsole() {
-        system("clear");
-        //cout << "\033[2J\033[1;1H";
+        system("cls");
+}
+
+string getUserName() {
+    wchar_t buffer[UNLEN + 1];
+    DWORD size = UNLEN + 1;
+    GetUserNameW(buffer, &size);
+    wstring wideUsername(buffer);
+    string username(wideUsername.begin(), wideUsername.end());
+    return username;
+}
+
+string getCurrentTime() {
+    auto now = chrono::system_clock::now();
+    time_t timestamp = chrono::system_clock::to_time_t(now);
+    ostringstream stream;
+    stream << put_time(gmtime(&timestamp), "%Y-%m-%dT%H:%M:%SZ");
+    return stream.str();
 }
 
 void checkCSVFile(const string& filename) {
@@ -39,7 +56,7 @@ void checkCSVFile(const string& filename) {
         inputFile.close();
 
         if (newFileSize > fileSize) {
-            // Read the new entries from the file
+            
             ifstream inputFile(filename);
             inputFile.seekg(fileSize);
             string newEntry;
@@ -48,20 +65,18 @@ void checkCSVFile(const string& filename) {
             }
             inputFile.close();
 
-            // Update the file size
+            
             fileSize = newFileSize;
 
             updated.store(true);
 
             for (const auto& entry : newEntries) {
-                cout << entry;
+                std::cout << entry;
             }
 
             newEntries.clear();
 
         }
-
-        
     
     }
 
@@ -92,15 +107,48 @@ vector<vector<string>> readCsvFile(const string& fileName) {
 void printMessagesAndUserInput(const string& user_input) {
     auto chatData = readCsvFile(fileName);
     clearConsole();
+
+    // Set the field width for each output column
+    const int usernameWidth = 10;
+    const int messageWidth = 60;
+    const int timestampWidth = 20;
+
     for (const auto& row : chatData) {
-        for (const auto& cell : row) {
-            cout << cell << " ";
-        }
-        cout << endl;
+        // Print the username column with fixed field width
+        std::cout << std::setw(usernameWidth) << std::left << row[0] << " ";
+
+        // Print the message column with fixed field width
+        std::cout << std::setw(messageWidth) << std::left << row[1] << " ";
+
+        // Print the timestamp column with fixed field width, aligned to the right
+        std::cout << std::setw(timestampWidth) << std::right << row[2] << std::endl;
     }
-    cout << endl;
-    cout << user_input; // Print the current user input
-    cout.flush();
+
+    std::cout << std::endl << user_input;
+    std::cout.flush();
+}
+
+void printMessagesAndUserInput() {
+    auto chatData = readCsvFile(fileName);
+    clearConsole();
+
+    const int usernameWidth = 10;
+    const int messageWidth = 60;
+    const int timestampWidth = 20;
+
+    for (const auto& row : chatData) {
+        
+        std::cout << std::setw(usernameWidth) << std::left << row[0] << " ";
+
+       
+        std::cout << std::setw(messageWidth) << std::left << row[1] << " ";
+
+        
+        std::cout << std::setw(timestampWidth) << std::right << row[2] << std::endl;
+    }
+
+    std::cout << std::endl;
+    std::cout.flush();
 }
 
 void appendMessageToCsv(const string& fileName, const string& message, const string& timestamp, const string& username) {
@@ -110,26 +158,7 @@ void appendMessageToCsv(const string& fileName, const string& message, const str
         exit(1);
     }
 
-    outFile << message << "," << timestamp << "," << username << '\n';
-    outFile.close();
-}
-
-void writeCsvFile(const string& fileName, const vector<vector<string>>& data) {
-    ofstream outFile(fileName);
-    if (!outFile.is_open()) {
-        cerr << "Failed to open the file: " << fileName << endl;
-        exit(1);
-    }
-
-    for (const auto& row : data) {
-        for (size_t i = 0; i < row.size(); ++i) {
-            outFile << row[i];
-            if (i + 1 != row.size()) {
-                outFile << ',';
-            }
-        }
-        outFile << '\n';
-    }
+    outFile << username << "," << message << "," << timestamp << '\n';
     outFile.close();
 }
 
@@ -157,12 +186,13 @@ void getUserInput(string& message) {
 
     while (true) {
         ch = getchar();
+        
         if (ch == '\n') {
             {
                 lock_guard<mutex> lock(messageMutex);
                 message = input;
             }
-            appendMessageToCsv(fileName, input, timestamp, username);
+            appendMessageToCsv(fileName, input, getCurrentTime(), getUserName());
             input.clear();
             {
                 lock_guard<mutex> lock(messageMutex);
@@ -176,6 +206,7 @@ void getUserInput(string& message) {
 
 int main() {
     clearConsole();
+    printMessagesAndUserInput();
 
     thread userInputThread(getUserInput, ref(message));
     thread timerThread(timerFunction);
