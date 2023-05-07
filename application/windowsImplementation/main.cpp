@@ -1,28 +1,25 @@
+#include <windows.h>
+#include <string>
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <sstream>
 #include <thread>
-#include <string>
-#include <mutex>
 #include <atomic>
-#include <Windows.h>
+#include <mutex>
+#include <ctime>
 #include <iomanip>
 #include <lmcons.h>
+#include <functional>
 
 using namespace std;
 
-string message;
+#define ID_SEND_BUTTON 1
+#define ID_INPUT_EDIT 2
+#define ID_OUTPUT_EDIT 3
 
-atomic<bool> updated(false);
-
+string fileName = "\\\\VBOXSVR\\application\\sharedDrive\\chat_data.csv";
 mutex messageMutex;
-
-string fileName = "C:\\application\\sharedDrive\\chat_data.csv";
-
-void clearConsole() {
-        system("cls");
-}
 
 string getUserName() {
     wchar_t buffer[UNLEN + 1];
@@ -36,50 +33,23 @@ string getUserName() {
 string getCurrentTime() {
     auto now = chrono::system_clock::now();
     time_t timestamp = chrono::system_clock::to_time_t(now);
+    auto local_time = localtime(&timestamp);
     ostringstream stream;
-    stream << put_time(gmtime(&timestamp), "%Y-%m-%dT%H:%M:%SZ");
+    stream << put_time(local_time, "%Y-%m-%dT%H:%M:%SZ");
     return stream.str();
 }
 
-void checkCSVFile(const string& filename) {
-    vector<string> newEntries;
-    ifstream inputFile(filename);
-    inputFile.seekg(0, ios::end);
-    size_t fileSize = inputFile.tellg();
-    inputFile.close();
-
-    while (true) {
-        
-        ifstream inputFile(filename);
-        inputFile.seekg(0, ios::end);
-        size_t newFileSize = inputFile.tellg();
-        inputFile.close();
-
-        if (newFileSize > fileSize) {
-            
-            ifstream inputFile(filename);
-            inputFile.seekg(fileSize);
-            string newEntry;
-            while (getline(inputFile, newEntry)) {
-                newEntries.push_back(newEntry);
-            }
-            inputFile.close();
-
-            
-            fileSize = newFileSize;
-
-            updated.store(true);
-
-            for (const auto& entry : newEntries) {
-                std::cout << entry;
-            }
-
-            newEntries.clear();
-
-        }
-    
+void appendMessageToCsv(const string& fileName, const string& message, const string& timestamp, const string& username) {
+    ofstream outFile(fileName, ios_base::app);
+    if (!outFile.is_open()) {
+        cerr << "Failed to open the file: " << fileName << endl;
+        exit(1);
     }
 
+    string quote = "\"" + message + "\"";
+
+    outFile << username << "," << quote << "," << timestamp << '\n';
+    outFile.close();
 }
 
 vector<vector<string>> readCsvFile(const string& fileName) {
@@ -118,119 +88,165 @@ vector<vector<string>> readCsvFile(const string& fileName) {
     return data;
 }
 
-void printMessagesAndUserInput(const string& user_input) {
+LRESULT CALLBACK InputEditWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    WNDPROC oldWndProc = (WNDPROC)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+
+    if (uMsg == WM_CHAR && wParam == VK_RETURN) {
+        // Send a button click message to the Send button
+        HWND parentHwnd = GetParent(hwnd);
+        SendMessage(parentHwnd, WM_COMMAND, MAKEWPARAM(ID_SEND_BUTTON, BN_CLICKED), (LPARAM)GetDlgItem(parentHwnd, ID_SEND_BUTTON));
+        return 0;
+    }
+
+    return CallWindowProc(oldWndProc, hwnd, uMsg, wParam, lParam);
+}
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_CREATE: {
+            HWND outputEdit = CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE | ES_READONLY | ES_WANTRETURN | ES_AUTOVSCROLL | WS_VSCROLL, 10, 10, 760, 450, hwnd, (HMENU)ID_OUTPUT_EDIT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            HWND inputEdit = CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 10, 470, 660, 30, hwnd, (HMENU)ID_INPUT_EDIT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            WNDPROC oldInputEditWndProc = (WNDPROC)SetWindowLongPtr(inputEdit, GWLP_WNDPROC, (LONG_PTR)InputEditWndProc);
+            SetWindowLongPtr(inputEdit, GWLP_USERDATA, (LONG_PTR)oldInputEditWndProc);
+            HFONT hFont = CreateFontA(16, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Consolas");
+            SendMessage(outputEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
+            CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 10, 470, 660, 30, hwnd, (HMENU)ID_INPUT_EDIT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            CreateWindow("BUTTON", "Send", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 680, 470, 100, 30, hwnd, (HMENU)ID_SEND_BUTTON, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            return 0;
+        }
+
+        case WM_COMMAND: {
+            if (LOWORD(wParam) == ID_SEND_BUTTON && HIWORD(wParam) == BN_CLICKED) {
+                // Handle send button click
+                char inputText[1024];
+                GetDlgItemText(hwnd, ID_INPUT_EDIT, inputText, 1024);
+
+                // Append the message to the CSV file
+                appendMessageToCsv(fileName, inputText, getCurrentTime(), getUserName());
+
+                // Clear the input edit control
+                SetDlgItemText(hwnd, ID_INPUT_EDIT, "");
+            }
+            return 0;
+        }
+
+        case WM_VSCROLL: {
+            HWND outputEdit = GetDlgItem(hwnd, ID_OUTPUT_EDIT);
+            int nScrollCode = (int)LOWORD(wParam);
+
+            SCROLLINFO si;
+            si.cbSize = sizeof(si);
+            si.fMask = SIF_ALL;
+            GetScrollInfo(outputEdit, SB_VERT, &si);
+
+            int yPos = si.nPos;
+            switch (nScrollCode) {
+                case SB_LINEUP:
+                    si.nPos -= 1;
+                    break;
+                case SB_LINEDOWN:
+                    si.nPos += 1;
+                    break;
+                case SB_PAGEUP:
+                    si.nPos -= si.nPage;
+                    break;
+                case SB_PAGEDOWN:
+                    si.nPos += si.nPage;
+                    break;
+                case SB_THUMBTRACK:
+                    si.nPos = si.nTrackPos;
+                    break;
+                default:
+                    break;
+            }
+
+            si.fMask = SIF_POS;
+            SetScrollInfo(outputEdit, SB_VERT, &si, TRUE);
+            int newPos = GetScrollPos(outputEdit, SB_VERT);
+            ScrollWindowEx(outputEdit, 0, yPos - newPos, NULL, NULL, NULL, NULL, SW_INVALIDATE | SW_ERASE);
+            UpdateWindow(outputEdit);
+            return 0;
+        }
+
+        case WM_DESTROY: {
+            PostQuitMessage(0);
+            return 0;
+        }
+
+        default:
+            return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    }
+}
+
+void updateOutputEditControl(HWND hwnd) {
     auto chatData = readCsvFile(fileName);
-    clearConsole();
 
     const int usernameWidth = 10;
     const int messageWidth = 60;
     const int timestampWidth = 20;
 
-    for (const auto& row : chatData) {
-
-        std::cout << std::setw(usernameWidth) << std::left << row[0] << " ";
-
-       
-        std::cout << std::setw(messageWidth) << std::left << row[1] << " ";
-
-        
-        std::cout << std::setw(timestampWidth) << std::right << row[2] << std::endl;
-    }
-
-    std::cout << std::endl << user_input;
-    std::cout.flush();
-}
-
-void printMessagesAndUserInput() {
-    auto chatData = readCsvFile(fileName);
-    clearConsole();
-
-    const int usernameWidth = 10;
-    const int messageWidth = 60;
-    const int timestampWidth = 20;
+    stringstream ss;
 
     for (const auto& row : chatData) {
-        
-        std::cout << std::setw(usernameWidth) << std::left << row[0] << " ";
+        string username = row[0];
+        string message = row[1];
+        string timestamp = row[2];
 
-       
-        std::cout << std::setw(messageWidth) << std::left << row[1] << " ";
+        username.resize(usernameWidth, ' ');
+        message.resize(messageWidth, ' ');
+        timestamp.resize(timestampWidth, ' ');
 
-        
-        std::cout << std::setw(timestampWidth) << std::right << row[2] << std::endl;
+        ss << username << message << timestamp << endl;
     }
 
-    std::cout << std::endl;
-    std::cout.flush();
+    SetDlgItemText(hwnd, ID_OUTPUT_EDIT, ss.str().c_str());
+
+    // Scroll to the bottom
+    HWND outputEdit = GetDlgItem(hwnd, ID_OUTPUT_EDIT);
+    int textLength = GetWindowTextLength(outputEdit);
+    SendMessage(outputEdit, EM_SETSEL, textLength, textLength);
+    SendMessage(outputEdit, EM_SCROLLCARET, 0, 0);
 }
 
-void appendMessageToCsv(const string& fileName, const string& message, const string& timestamp, const string& username) {
-    ofstream outFile(fileName, ios_base::app);
-    if (!outFile.is_open()) {
-        cerr << "Failed to open the file: " << fileName << endl;
-        exit(1);
-    }
 
-    string quote = "\"" + message + "\"";
-
-    outFile << username << "," << quote << "," << timestamp << '\n';
-    outFile.close();
-}
-
-void timerFunction() {
-    string current_user_input;
+void timerFunction(reference_wrapper<HWND> hwnd) {
     while (true) {
-        {
-            lock_guard<mutex> lock(messageMutex);
-            current_user_input = message;
-        }
-
-        if (updated.load()) {
-            printMessagesAndUserInput(current_user_input);
-            updated.store(false);
-        }
-
-        
+        updateOutputEditControl(hwnd);
         this_thread::sleep_for(chrono::milliseconds(100));
     }
 }
 
-void getUserInput(string& message) {
-    string input;
-    char ch;
+// Add the necessary functions from the provided code here
 
-    while (true) {
-        ch = getchar();
-        
-        if (ch == '\n') {
-            {
-                lock_guard<mutex> lock(messageMutex);
-                message = input;
-            }
-            appendMessageToCsv(fileName, input, getCurrentTime(), getUserName());
-            input.clear();
-            {
-                lock_guard<mutex> lock(messageMutex);
-                message = "";
-            }
-        } else {
-            input += ch;
-        }
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    // Register the window class
+    const char CLASS_NAME[] = "ChatAppClass";
+
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = CLASS_NAME;
+
+    RegisterClass(&wc);
+
+    // Create the main window
+    HWND hwnd = CreateWindowEx(0, CLASS_NAME, "Chat Application", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL, hInstance, NULL);
+    if (hwnd == NULL) {
+        return 0;
     }
-}
 
-int main() {
-    clearConsole();
-    printMessagesAndUserInput();
+    ShowWindow(hwnd, nCmdShow);
 
-    thread userInputThread(getUserInput, ref(message));
-    thread timerThread(timerFunction);
-    thread checkCSVThread(checkCSVFile, fileName);
+    // Start the timer function in a separate thread
+    thread timerThread(timerFunction, ref(hwnd));
+    timerThread.detach();
 
-    timerThread.join();
-    userInputThread.join();
-    checkCSVThread.join();
-    
+    // Message loop
+    MSG msg = {};
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
 
     return 0;
 }

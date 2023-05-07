@@ -1,6 +1,6 @@
 CC = g++
 CFLAGS = -c
-LFLAGS = -static-libgcc -static-libstdc++ -Wl,--subsystem,console
+LFLAGS = -static-libgcc -static-libstdc++ -mwindows
 
 clean:
 	del *.o NGChat.exe
