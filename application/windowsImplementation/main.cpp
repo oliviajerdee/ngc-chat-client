@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <lmcons.h>
 #include <functional>
+#include "resource.h"
 
 using namespace std;
 
@@ -20,6 +21,7 @@ using namespace std;
 
 string fileName = "\\\\VBOXSVR\\application\\sharedDrive\\chat_data.csv";
 mutex messageMutex;
+LARGE_INTEGER previousFileSize = { 0 };
 
 string getUserName() {
     wchar_t buffer[UNLEN + 1];
@@ -50,6 +52,23 @@ void appendMessageToCsv(const string& fileName, const string& message, const str
 
     outFile << username << "," << quote << "," << timestamp << '\n';
     outFile.close();
+}
+
+bool isFileSizeChanged(const string& fileName, LARGE_INTEGER& previousFileSize) {
+    WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+
+    if (!GetFileAttributesEx(fileName.c_str(), GetFileExInfoStandard, &fileInfo)) {
+        cerr << "Error: Could not get file attributes for file: " << fileName << endl;
+        return false;
+    }
+
+    LARGE_INTEGER currentFileSize;
+    currentFileSize.LowPart = fileInfo.nFileSizeLow;
+    currentFileSize.HighPart = fileInfo.nFileSizeHigh;
+
+    bool changed = currentFileSize.QuadPart != previousFileSize.QuadPart;
+    previousFileSize = currentFileSize;
+    return changed;
 }
 
 vector<vector<string>> readCsvFile(const string& fileName) {
@@ -110,8 +129,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             SetWindowLongPtr(inputEdit, GWLP_USERDATA, (LONG_PTR)oldInputEditWndProc);
             HFONT hFont = CreateFontA(16, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Consolas");
             SendMessage(outputEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
-            CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 10, 470, 660, 30, hwnd, (HMENU)ID_INPUT_EDIT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
             CreateWindow("BUTTON", "Send", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 680, 470, 100, 30, hwnd, (HMENU)ID_SEND_BUTTON, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            return 0;
+        }
+
+        case WM_SIZE: {
+            int width = LOWORD(lParam);
+            int height = HIWORD(lParam);
+
+            SetWindowPos(GetDlgItem(hwnd, ID_OUTPUT_EDIT), NULL, 10, 10, width - 20, height - 60, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, ID_INPUT_EDIT), NULL, 10, height - 40, width - 120, 30, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, ID_SEND_BUTTON), NULL, width - 100, height - 40, 100, 30, SWP_NOZORDER);
+
             return 0;
         }
 
@@ -168,6 +197,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
 
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+            // Redraw all child windows
+            RedrawWindow(GetDlgItem(hwnd, ID_OUTPUT_EDIT), NULL, NULL, RDW_INVALIDATE);
+            RedrawWindow(GetDlgItem(hwnd, ID_INPUT_EDIT), NULL, NULL, RDW_INVALIDATE);
+            RedrawWindow(GetDlgItem(hwnd, ID_SEND_BUTTON), NULL, NULL, RDW_INVALIDATE);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
         case WM_DESTROY: {
             PostQuitMessage(0);
             return 0;
@@ -181,11 +221,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 void updateOutputEditControl(HWND hwnd) {
     auto chatData = readCsvFile(fileName);
 
+    stringstream ss;
+
     const int usernameWidth = 10;
     const int messageWidth = 60;
     const int timestampWidth = 20;
-
-    stringstream ss;
 
     for (const auto& row : chatData) {
         string username = row[0];
@@ -211,7 +251,11 @@ void updateOutputEditControl(HWND hwnd) {
 
 void timerFunction(reference_wrapper<HWND> hwnd) {
     while (true) {
-        updateOutputEditControl(hwnd);
+
+        if (isFileSizeChanged(fileName, previousFileSize)) {
+            updateOutputEditControl(hwnd);
+        }
+        
         this_thread::sleep_for(chrono::milliseconds(100));
     }
 }
@@ -222,15 +266,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Register the window class
     const char CLASS_NAME[] = "ChatAppClass";
 
-    WNDCLASS wc = {};
+    WNDCLASSEX wc = {};
+    wc.cbSize = sizeof(WNDCLASSEX);
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = CLASS_NAME;
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_APPICON));
+    wc.hIconSm = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_APPICON));
 
-    RegisterClass(&wc);
+    RegisterClassEx(&wc);
 
     // Create the main window
-    HWND hwnd = CreateWindowEx(0, CLASS_NAME, "Chat Application", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL, hInstance, NULL);
+    HWND hwnd = CreateWindowEx(0, CLASS_NAME, "NGChat", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL, hInstance, NULL);
     if (hwnd == NULL) {
         return 0;
     }

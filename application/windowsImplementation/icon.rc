@@ -1,1 +1,3 @@
-IDI_ICON1 ICON "NGChatLogo.ico"
+#include "resource.h"
+MAINICON ICON "NGChatLogo.ico"
+IDI_APPICON ICON "NGChatLogo.ico"
